@@ -1,18 +1,34 @@
 use std::io;
 use std::env;
 use std::fs::File;
+use std::fs::metadata;
 use std::io::Read;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let (option, file_path) = match args.len() {
-        2 => ("ALL".to_string(), args[1].to_string()),
-        3 => (args[1].to_string(), args[2].to_string()),
-        _ => {
-            eprintln!("Usage <option> <file_path>");
-            std::process::exit(1);
+    // Ensure we have at least one argument
+    if args.len() < 2 {
+        eprintln!("Usage: ccwc [-c|-l|-w|-m] [file_path]");
+        std::process::exit(1);
+    }
+
+    // Initialize option and input source
+    let (option, input_source) = if args.len() == 2 {
+        // If only one argument is provided, treat it as a file path or option
+        if let Ok(_) = metadata(&args[1]) {
+            // If it's a valid file path, assume it's the file path and use "ALL"
+            ("ALL".to_string(), args[1].clone())
+        } else {
+            // Otherwise, treat it as an option with stdin as the source
+            (args[1].clone(), "".to_string())
         }
+    } else if args.len() == 3 {
+        // If two arguments are provided, the first is the option and the second is the file path
+        (args[1].clone(), args[2].clone())
+    } else {
+        eprintln!("Usage: ccwc [-c|-l|-w|-m] [file_path]");
+        std::process::exit(1);
     };
 
     if !["ALL", "-c", "-l", "-w", "-m"].contains(&option.as_str()) {
@@ -20,7 +36,15 @@ fn main() -> io::Result<()> {
         std::process::exit(1);
     }
 
-    let mut file: File = File::open(file_path.clone())?;
+    // Choose the input source (stdin or file)
+    let mut input: Box<dyn Read> = if input_source == "" {
+        // Read from stdin if the input source is "-"
+        Box::new(io::stdin())
+    } else {
+        // Otherwise, try to open the specified file
+        Box::new(File::open(&input_source)?)
+    };
+
     let mut buffer: Vec<u8> = Vec::new();
     let mut byte_count: i32 = 0;
     let mut line_count: i32 = 0;
@@ -28,7 +52,7 @@ fn main() -> io::Result<()> {
     let mut is_last_char_empty: bool = true;
     let mut character_count: i32 = 0;
 
-    while let Ok(bytes_read) = file.read_to_end(&mut buffer) {
+    while let Ok(bytes_read) = input.read_to_end(&mut buffer) {
         if bytes_read == 0 {
             break;
         }
@@ -56,7 +80,7 @@ fn main() -> io::Result<()> {
     }
 
     match option.as_str() {
-        "ALL" => println!("{} {} {} {}", line_count, word_count, byte_count, file_path),
+        "ALL" => println!("{} {} {} {}", line_count, word_count, byte_count, input_source),
         "-c" => println!("{}", byte_count),
         "-l" => println!("{}", line_count),
         "-w" => println!("{}", word_count),
